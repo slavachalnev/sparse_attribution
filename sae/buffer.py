@@ -24,7 +24,6 @@ class ActivationBuffer:
         self.fill_buffer()
 
     def fill_buffer(self):
-        print("Filling buffer")
         buffer_index = self.batch_idx * self.cfg.train_batch_size
         with tqdm(total=self.buffer_size, desc="Filling buffer") as pbar:
             pbar.update(buffer_index)
@@ -47,7 +46,9 @@ class ActivationBuffer:
                 buffer_index += n_to_add
                 pbar.update(n_to_add)
         
-        self.buffer = self.buffer[torch.randperm(self.buffer_size)]
+        perm = torch.randperm(self.buffer_size)
+        self.buffer = self.buffer[perm]
+        self.grad_buffer = self.grad_buffer[perm]
         self.batch_idx = 0
 
     def get_activations(self):
@@ -56,8 +57,9 @@ class ActivationBuffer:
         from_idx = self.batch_idx * self.cfg.train_batch_size
         to_idx = (self.batch_idx + 1) * self.cfg.train_batch_size
         activations = self.buffer[from_idx : to_idx]
+        grads = self.grad_buffer[from_idx : to_idx]
         self.batch_idx += 1
-        return activations
+        return activations, grads
 
     def get_token_batch(self):
         try:
@@ -81,8 +83,11 @@ class ActivationBuffer:
         with self.model.hooks(fwd_hooks=[(self.hook_point, forward_hook)], bwd_hooks=[(self.hook_point, back_hook)]):
             loss = self.model(tokens, return_type='loss')
             loss.backward()
+        
+        acts = acts.detach().view(-1, self.cfg.d_in)
+        grads = grads.detach().view(-1, self.cfg.d_in)
 
-        return acts.view(-1, self.cfg.d_in), grads.view(-1, self.cfg.d_in)
+        return acts, grads
 
 
 # class ActivationDataset(Dataset):

@@ -2,12 +2,25 @@ import os
 import json
 from typing import Optional
 
+from dataclasses import dataclass
+
 import einops
 import torch
 from torch import nn
 from transformer_lens.hook_points import HookedRootModule, HookPoint
 
 from config import SAEConfig
+
+
+@dataclass
+class SAEOutput:
+    sae_out: torch.Tensor
+    feature_acts: torch.Tensor
+    loss: torch.Tensor
+    mse_loss: torch.Tensor
+    l1_loss: torch.Tensor
+    l1_attr: Optional[torch.Tensor]
+    reconstr_attr: Optional[torch.Tensor]
 
 
 class SparseAutoencoder(HookedRootModule):
@@ -107,13 +120,28 @@ class SparseAutoencoder(HookedRootModule):
         sparsity = sparsity.mean(dim=(0,))
         l1_loss = self.l1_coefficient * l1_factor * sparsity
 
-        print('grad_wrt_x', grad_wrt_x.shape)
-        # grad_y = 
-        # act_attr 
+        grad_y = grad_wrt_x @ self.W_dec.T
+        l1_attr = (grad_y * feature_acts).abs().sum(dim=-1).mean()
+        e = x - sae_out
+        reconstr_attr = einops.einsum(e, grad_wrt_x,
+                                      "batch d, batch d -> batch").abs().mean()
+        
+        l1_attr = self.attrib_sparsity_coeff * l1_attr
+        reconstr_attr = self.unexplained_attrib_coeff * reconstr_attr
 
-        loss = mse_loss + l1_loss
+        mse_loss = self.cfg.mse_coefficient * mse_loss
+        
+        loss = mse_loss + l1_loss + l1_attr + reconstr_attr
 
-        return sae_out, feature_acts, loss, mse_loss, l1_loss
+        return SAEOutput(
+            sae_out=sae_out,
+            feature_acts=feature_acts,
+            loss=loss,
+            mse_loss=mse_loss,
+            l1_loss=l1_loss,
+            l1_attr=l1_attr,
+            reconstr_attr=reconstr_attr,
+        )
 
     @torch.no_grad()
     def set_decoder_norm_to_unit_norm(self):

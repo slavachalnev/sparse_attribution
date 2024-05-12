@@ -19,15 +19,16 @@ class SAEConfig:
     d_sae: Optional[int] = None
 
     # Activation Store Parameters
-    n_batches_in_buffer: int = 50
+    n_batches_in_buffer: int = 100
     store_batch_size: int = 16
 
     # Sparse Attribution Parameters
-    attrib_sparsity_coeff: float = 0.0
-    unexplained_attrib_coeff: float = 0.0
+    attrib_sparsity_coeff: float = 1e-4
+    unexplained_attrib_coeff: float = 0.5
+    mse_coefficient: float = 0.5
 
     # Training Parameters
-    l1_coefficient: float = 2e-4
+    l1_coefficient: float = 1e-4
     lp_norm: float = 1
     lr: float = 3e-4
     lr_scheduler_name: str = (

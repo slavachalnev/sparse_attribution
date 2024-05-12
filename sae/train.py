@@ -4,7 +4,7 @@ import json
 import wandb
 import torch
 from config import SAEConfig
-from model import SparseAutoencoder
+from model import SparseAutoencoder, SAEOutput
 from buffer import ActivationBuffer
 from transformer_lens import HookedTransformer
 
@@ -12,7 +12,7 @@ from transformer_lens import HookedTransformer
 def main():
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     cfg = SAEConfig(device=device,
-                    log_to_wandb=False,  ## for testing
+                    # log_to_wandb=False,  ## for testing
                     n_batches_in_buffer=10,  ## for testing
                     checkpoint_frequency=None,
                     )
@@ -58,34 +58,37 @@ def main():
             l1_factor = 1.0
 
         optimizer.zero_grad()
-        acts = buffer.get_activations()
+        acts, grads = buffer.get_activations()
         acts = acts.to(cfg.device)
+        grads = grads.to(cfg.device)
 
-        sae_out, feature_acts, loss, mse_loss, l1_loss = sae(acts, l1_factor=l1_factor)
+        sae_output: SAEOutput = sae(acts, l1_factor=l1_factor, grad_wrt_x=grads)
 
-        loss.backward()
+        sae_output.loss.backward()
         sae.remove_gradient_parallel_to_decoder_directions()
         optimizer.step()
         sae.set_decoder_norm_to_unit_norm()
         lr_scheduler.step()
 
         # Update dead feature tracker
-        activated_features = (feature_acts > 0).any(dim=0).cpu()
+        activated_features = (sae_output.feature_acts > 0).any(dim=0).cpu()
         steps_since_last_activation[activated_features] = 0
         steps_since_last_activation[~activated_features] += cfg.train_batch_size
 
         if cfg.log_to_wandb and (step + 1) % cfg.wandb_log_frequency == 0:
             dead_features_prop = (steps_since_last_activation >= cfg.dead_feature_threshold).float().mean()
 
-            l_0 = (feature_acts > 0).float().sum(dim=-1).mean()
+            l_0 = (sae_output.feature_acts > 0).float().sum(dim=-1).mean()
 
             # TODO: record attribution
 
             wandb.log({
                 "step": step,
-                "loss": loss.item(),
-                "mse_loss": mse_loss.item(),
-                "l1_loss": l1_loss.item(),
+                "loss": sae_output.loss.item(),
+                "mse_loss": sae_output.mse_loss.item(),
+                "l1_loss": sae_output.l1_loss.item(),
+                "reconstr_attr": sae_output.reconstr_attr.item(),
+                "l1_attr": sae_output.l1_attr.item(),
                 "dead_features_prop": dead_features_prop.item(),
                 "l_0": l_0.item(),
                 "l1_factor": l1_factor,
