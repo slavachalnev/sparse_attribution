@@ -19,36 +19,37 @@ class ActivationBuffer:
         self.hook_point = self.cfg.hook_point.format(layer=self.cfg.hook_point_layer)
         self.buffer_size = cfg.n_batches_in_buffer * cfg.store_batch_size * cfg.context_size
         self.buffer = torch.zeros((self.buffer_size, self.cfg.d_in), dtype=torch.float32, device=cfg.device)
+        self.grad_buffer = torch.zeros((self.buffer_size, self.cfg.d_in), dtype=torch.float32, device=cfg.device)
         self.batch_idx = 0  # index of the output batch
-        self.filter = filter
         self.fill_buffer()
 
-    @torch.no_grad()
     def fill_buffer(self):
+        print("Filling buffer")
         buffer_index = self.batch_idx * self.cfg.train_batch_size
         with tqdm(total=self.buffer_size, desc="Filling buffer") as pbar:
             pbar.update(buffer_index)
             while buffer_index < self.buffer_size:
                 tokens = self.get_token_batch()
-                acts = self.model.run_with_cache(tokens,
-                                                stop_at_layer=self.cfg.hook_point_layer + 1,
-                                                names_filter=[self.hook_point],
-                                                )[1][self.hook_point]
-                acts = acts.view(-1, self.cfg.d_in)
+                ######
+                # old_acts = self.model.run_with_cache(tokens,
+                #                                 stop_at_layer=self.cfg.hook_point_layer + 1,
+                #                                 names_filter=[self.hook_point],
+                #                                 )[1][self.hook_point]
+                # old_acts = old_acts.view(-1, self.cfg.d_in)
+                ######
 
-                if self.filter is not None:
-                    acts = acts[self.filter(acts)]
+                acts, grads = self.run_and_cache(tokens)
 
                 remaining_space = self.buffer_size - buffer_index
                 n_to_add = min(acts.shape[0], remaining_space)
                 self.buffer[buffer_index : buffer_index + n_to_add] = acts[:n_to_add]
+                self.grad_buffer[buffer_index : buffer_index + n_to_add] = grads[:n_to_add]
                 buffer_index += n_to_add
                 pbar.update(n_to_add)
         
         self.buffer = self.buffer[torch.randperm(self.buffer_size)]
         self.batch_idx = 0
 
-    @torch.no_grad()
     def get_activations(self):
         if self.batch_idx * self.cfg.train_batch_size > self.buffer_size // 2:
             self.fill_buffer()  # this resets the batch_idx
@@ -64,6 +65,24 @@ class ActivationBuffer:
         except StopIteration:
             self.token_loader = iter(DataLoader(self.dataset, batch_size=self.cfg.store_batch_size))
             return next(self.token_loader)['tokens']
+    
+    def run_and_cache(self, tokens):
+        acts = None
+        grads = None
+
+        def back_hook(input, hook):
+            nonlocal grads
+            grads = input
+
+        def forward_hook(input, hook):
+            nonlocal acts
+            acts = input
+        
+        with self.model.hooks(fwd_hooks=[(self.hook_point, forward_hook)], bwd_hooks=[(self.hook_point, back_hook)]):
+            loss = self.model(tokens, return_type='loss')
+            loss.backward()
+
+        return acts.view(-1, self.cfg.d_in), grads.view(-1, self.cfg.d_in)
 
 
 # class ActivationDataset(Dataset):

@@ -1,5 +1,6 @@
 import os
 import json
+from typing import Optional
 
 import einops
 import torch
@@ -25,6 +26,10 @@ class SparseAutoencoder(HookedRootModule):
         self.dtype = torch.float32
         # self.dtype = torch.float16 if cfg.half else torch.float32
         self.device = cfg.device
+
+        # Sparse Attribution
+        self.attrib_sparsity_coeff = cfg.attrib_sparsity_coeff
+        self.unexplained_attrib_coeff = cfg.unexplained_attrib_coeff
 
         self.hook_sae_in = HookPoint()
         self.hook_hidden_pre = HookPoint()
@@ -81,7 +86,12 @@ class SparseAutoencoder(HookedRootModule):
         )
         return sae_out, feature_acts
 
-    def forward(self, x: torch.Tensor, l1_factor: float = 1.0):
+    def forward(
+            self,
+            x: torch.Tensor,
+            l1_factor: float = 1.0,
+            grad_wrt_x: Optional[torch.Tensor] = None,
+        ):
         sae_out, feature_acts = self._forward(x)
 
         # add config for whether l2 is normalized:
@@ -96,6 +106,10 @@ class SparseAutoencoder(HookedRootModule):
         sparsity = feature_acts.norm(p=self.lp_norm, dim=1)
         sparsity = sparsity.mean(dim=(0,))
         l1_loss = self.l1_coefficient * l1_factor * sparsity
+
+        print('grad_wrt_x', grad_wrt_x.shape)
+        # grad_y = 
+        # act_attr 
 
         loss = mse_loss + l1_loss
 

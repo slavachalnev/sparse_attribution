@@ -12,9 +12,8 @@ from transformer_lens import HookedTransformer
 def main():
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     cfg = SAEConfig(device=device,
-                    # steps_between_resample=10, ## for testing
-                    # log_to_wandb=False,  ## for testing
-                    # n_batches_in_buffer=10,  ## for testing
+                    log_to_wandb=False,  ## for testing
+                    n_batches_in_buffer=10,  ## for testing
                     checkpoint_frequency=None,
                     )
     
@@ -79,6 +78,8 @@ def main():
             dead_features_prop = (steps_since_last_activation >= cfg.dead_feature_threshold).float().mean()
 
             l_0 = (feature_acts > 0).float().sum(dim=-1).mean()
+
+            # TODO: record attribution
 
             wandb.log({
                 "step": step,

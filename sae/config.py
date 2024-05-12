@@ -20,7 +20,11 @@ class SAEConfig:
 
     # Activation Store Parameters
     n_batches_in_buffer: int = 50
-    store_batch_size: int = 64
+    store_batch_size: int = 16
+
+    # Sparse Attribution Parameters
+    attrib_sparsity_coeff: float = 0.0
+    unexplained_attrib_coeff: float = 0.0
 
     # Training Parameters
     l1_coefficient: float = 2e-4
@@ -29,7 +33,7 @@ class SAEConfig:
     lr_scheduler_name: str = (
         "constantwithwarmup"  # constant, constantwithwarmup
     )
-    l1_warm_up_steps: int = 1000
+    l1_warm_up_steps: Optional[int] = None
     lr_warm_up_steps: int = 500
     train_batch_size: int = 4096
     n_training_tokens: int = int(1e9)
