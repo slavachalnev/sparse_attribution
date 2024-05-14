@@ -122,9 +122,15 @@ class SparseAutoencoder(HookedRootModule):
 
         grad_y = grad_wrt_x @ self.W_dec.T
         l1_attr = (grad_y * feature_acts).abs().sum(dim=-1).mean()
+
         e = x - sae_out
-        reconstr_attr = einops.einsum(e, grad_wrt_x,
-                                      "batch d, batch d -> batch").abs().mean()
+        if self.cfg.unexplained_attrib_method == "anthropic":
+            reconstr_attr = einops.einsum(e, grad_wrt_x,
+                                        "batch d, batch d -> batch").abs().mean()
+        elif self.cfg.unexplained_attrib_method == "l2":
+            reconstr_attr = torch.norm(e * grad_wrt_x, dim=-1).pow(2).mean()
+        else:
+            raise ValueError(f"Invalid attribution method: {self.cfg.unexplained_attrib_method}")
         
         l1_attr = self.attrib_sparsity_coeff * l1_attr
         reconstr_attr = self.unexplained_attrib_coeff * reconstr_attr

@@ -26,6 +26,7 @@ class SAEConfig:
     attrib_sparsity_coeff: float = 1.5e-4
     unexplained_attrib_coeff: float = 0.5
     mse_coefficient: float = 0.5
+    unexplained_attrib_method: str = "l2" # "anthropic" or "l2"
 
     # Training Parameters
     l1_coefficient: float = 1.5e-4
@@ -66,6 +67,8 @@ class SAEConfig:
             self.run_name = f"{self.d_sae}-L1-{self.l1_coefficient}-LR-{self.lr}"
 
         print(f"Run name: {self.run_name}")
+
+        assert self.unexplained_attrib_method in ["anthropic", "l2"]
     
     def to_dict(self):
         return asdict(self)
