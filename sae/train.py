@@ -13,7 +13,7 @@ def main():
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     cfg = SAEConfig(device=device,
                     # log_to_wandb=False,  ## for testing
-                    n_batches_in_buffer=10,  ## for testing
+                    # n_batches_in_buffer=10,  ## for testing
                     checkpoint_frequency=None,
                     )
     
