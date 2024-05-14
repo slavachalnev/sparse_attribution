@@ -27,7 +27,7 @@ class SAEConfig:
     unexplained_attrib_coeff: float = 0.5
     mse_coefficient: float = 0.5
     unexplained_attrib_method: str = "l2" # "anthropic" or "l2"
-    norm_grad: bool = True
+    norm_grad: bool = False
 
     # Training Parameters
     l1_coefficient: float = 1.5e-4
@@ -39,13 +39,15 @@ class SAEConfig:
     l1_warm_up_steps: Optional[int] = None
     lr_warm_up_steps: int = 500
     train_batch_size: int = 4096
-    n_training_tokens: int = int(5e8) #int(1e9)
+    n_training_tokens: int = int(3e8) #int(1e9)
 
     dead_feature_threshold: float = 2e7
     steps_between_resample: int = 25000 # Anthropic does every 25000
     tune_resample: bool = False
 
     checkpoint_frequency: Optional[int] = 10000
+
+    chunk_size: int = int(1e6)
 
     # WANDB
     log_to_wandb: bool = True
@@ -65,7 +67,7 @@ class SAEConfig:
             self.d_sae = self.d_in * self.expansion_factor
 
         if self.run_name is None:
-            self.run_name = f"{self.d_sae}-L1-{self.l1_coefficient}-LR-{self.lr}"
+            self.run_name = f"{self.d_sae}-L1-{self.l1_coefficient}-LR-{self.lr}-AL1-{self.attrib_sparsity_coeff}-AL2-{self.unexplained_attrib_coeff}"
 
         print(f"Run name: {self.run_name}")
 

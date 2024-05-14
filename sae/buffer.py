@@ -29,13 +29,6 @@ class ActivationBuffer:
             pbar.update(buffer_index)
             while buffer_index < self.buffer_size:
                 tokens = self.get_token_batch()
-                ######
-                # old_acts = self.model.run_with_cache(tokens,
-                #                                 stop_at_layer=self.cfg.hook_point_layer + 1,
-                #                                 names_filter=[self.hook_point],
-                #                                 )[1][self.hook_point]
-                # old_acts = old_acts.view(-1, self.cfg.d_in)
-                ######
 
                 acts, grads = self.run_and_cache(tokens)
 
@@ -92,10 +85,20 @@ class ActivationBuffer:
 
 class ActivationDataset(Dataset):
     """Returns batches from memory-mapped numpy arrays for activations and gradients."""
-    def __init__(self, acts_mmap, grads_mmap, batch_size):
-        self.acts_mmap = acts_mmap
-        self.grads_mmap = grads_mmap
-        self.batch_size = batch_size
+    def __init__(self, acts_path: str, grads_path: str, cfg: SAEConfig):
+        acts_mmap = np.memmap(acts_path, dtype=np.float16, mode='r')
+        total_rows = acts_mmap.shape[0] // cfg.d_in
+
+        self.acts_mmap = np.memmap(acts_path, dtype=np.float16, mode='r', shape=(total_rows, cfg.d_in))
+        self.grads_mmap = np.memmap(grads_path, dtype=np.float16, mode='r', shape=(total_rows, cfg.d_in))
+        self.batch_size = cfg.train_batch_size
+
+        # self.n_batches_in_buffer = 100
+        # self.acts_buffer = torch.empty((self.n_batches_in_buffer * self.batch_size, cfg.d_in))
+        # self.grads_buffer = torch.empty((self.n_batches_in_buffer * self.batch_size, cfg.d_in))
+        # self.buffer_end = self.batch_size * self.n_batches_in_buffer
+        # self.in_buffer_idx = 0
+        # self._fill_cache(0)
 
     def __len__(self):
         return len(self.acts_mmap) // self.batch_size
@@ -103,9 +106,29 @@ class ActivationDataset(Dataset):
     def __getitem__(self, idx):
         start_idx = idx * self.batch_size
         end_idx = start_idx + self.batch_size
+
+        # if end_idx > self.buffer_end:
+        #     self._fill_cache(idx)
+        
+        # acts = self.acts_buffer[self.in_buffer_idx : self.in_buffer_idx + self.batch_size]
+        # grads = self.grads_buffer[self.in_buffer_idx : self.in_buffer_idx + self.batch_size]
+
+        # self.in_buffer_idx += self.batch_size
+
+        # return acts, grads
+
         acts_batch = self.acts_mmap[start_idx:end_idx]
         grads_batch = self.grads_mmap[start_idx:end_idx]
-        return torch.from_numpy(acts_batch).to(torch.float32), torch.from_numpy(grads_batch).to(torch.float32)
+        return torch.from_numpy(acts_batch).float(), torch.from_numpy(grads_batch).float()
+    
+    # def _fill_cache(self, idx):
+    #     start_idx = idx * self.batch_size
+    #     end_idx = start_idx + self.batch_size * self.n_batches_in_buffer
+    #     self.acts_buffer = torch.from_numpy(self.acts_mmap[start_idx:end_idx]).float()
+    #     self.grads_buffer = torch.from_numpy(self.grads_mmap[start_idx:end_idx]).float()
+    #     self.buffer_end = end_idx
+    #     self.in_buffer_idx = 0
+
 
 
 class ActivationLoader:
@@ -114,21 +137,13 @@ class ActivationLoader:
     We assume that the stored activations and gradients are sufficiently shuffled.
     """
     def __init__(self, acts_path: str, grads_path: str, cfg: SAEConfig):
-        acts_mmap = np.memmap(acts_path, dtype=np.float16, mode='r')
-        grads_mmap = np.memmap(grads_path, dtype=np.float16, mode='r')
-        
-        total_rows = acts_mmap.shape[0] // cfg.d_in
-        self.acts_mmap = np.memmap(acts_path, dtype=np.float16, mode='r', shape=(total_rows, cfg.d_in))
-        self.grads_mmap = np.memmap(grads_path, dtype=np.float16, mode='r', shape=(total_rows, cfg.d_in))
-        
-        self.dataset = ActivationDataset(self.acts_mmap, self.grads_mmap, cfg.train_batch_size)
-        self.dataloader = DataLoader(self.dataset, batch_size=1, num_workers=2, pin_memory=True)
+        self.dataset = ActivationDataset(acts_path, grads_path, cfg)
+        self.dataloader = DataLoader(self.dataset, batch_size=1, num_workers=2, pin_memory=True, prefetch_factor=2)
         self.iterator = iter(self.dataloader)
-    
+
     def get_activations(self):
         try:
             activations, gradients = next(self.iterator)
-            # squeeze removes the extra dimension added by DataLoader
             activations = activations.squeeze(0)
             gradients = gradients.squeeze(0)
         except StopIteration:
@@ -137,3 +152,4 @@ class ActivationLoader:
             activations = activations.squeeze(0)
             gradients = gradients.squeeze(0)
         return activations, gradients
+
