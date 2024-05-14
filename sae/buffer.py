@@ -90,40 +90,50 @@ class ActivationBuffer:
         return acts, grads
 
 
-# class ActivationDataset(Dataset):
-#     """Returns batches from a memory-mapped numpy array."""
-#     def __init__(self, mmap, batch_size):
-#         self.mmap = mmap
-#         self.batch_size = batch_size
+class ActivationDataset(Dataset):
+    """Returns batches from memory-mapped numpy arrays for activations and gradients."""
+    def __init__(self, acts_mmap, grads_mmap, batch_size):
+        self.acts_mmap = acts_mmap
+        self.grads_mmap = grads_mmap
+        self.batch_size = batch_size
 
-#     def __len__(self):
-#         return len(self.mmap) // self.batch_size
+    def __len__(self):
+        return len(self.acts_mmap) // self.batch_size
 
-#     def __getitem__(self, idx):
-#         start_idx = idx * self.batch_size
-#         end_idx = start_idx + self.batch_size
-#         batch = self.mmap[start_idx:end_idx]
-#         return torch.from_numpy(batch).to(torch.float32)
+    def __getitem__(self, idx):
+        start_idx = idx * self.batch_size
+        end_idx = start_idx + self.batch_size
+        acts_batch = self.acts_mmap[start_idx:end_idx]
+        grads_batch = self.grads_mmap[start_idx:end_idx]
+        return torch.from_numpy(acts_batch).to(torch.float32), torch.from_numpy(grads_batch).to(torch.float32)
 
 
-# class ActivationLoader:
-#     """
-#     Loads precomputed activations from disk.
-#     We assume that the stored activations are sufficiently shuffled.
-#     """
-#     def __init__(self, np_path: str, cfg: SAEConfig):
-#         self.mmap = np.memmap(np_path, dtype=np.float16, mode='r')
-#         total_rows = self.mmap.shape[0] // cfg.d_in
-#         self.mmap = np.memmap(np_path, dtype=np.float16, mode='r', shape=(total_rows, cfg.d_in))
-#         self.dataset = ActivationDataset(self.mmap, cfg.train_batch_size)
-#         self.dataloader = DataLoader(self.dataset, batch_size=1, num_workers=2, pin_memory=True)
-#         self.iterator = iter(self.dataloader)
+class ActivationLoader:
+    """
+    Loads precomputed activations and gradients from disk.
+    We assume that the stored activations and gradients are sufficiently shuffled.
+    """
+    def __init__(self, acts_path: str, grads_path: str, cfg: SAEConfig):
+        acts_mmap = np.memmap(acts_path, dtype=np.float16, mode='r')
+        grads_mmap = np.memmap(grads_path, dtype=np.float16, mode='r')
+        
+        total_rows = acts_mmap.shape[0] // cfg.d_in
+        self.acts_mmap = np.memmap(acts_path, dtype=np.float16, mode='r', shape=(total_rows, cfg.d_in))
+        self.grads_mmap = np.memmap(grads_path, dtype=np.float16, mode='r', shape=(total_rows, cfg.d_in))
+        
+        self.dataset = ActivationDataset(self.acts_mmap, self.grads_mmap, cfg.train_batch_size)
+        self.dataloader = DataLoader(self.dataset, batch_size=1, num_workers=2, pin_memory=True)
+        self.iterator = iter(self.dataloader)
     
-#     def get_activations(self):
-#         try:
-#             activations = next(self.iterator).squeeze(0)
-#             # squeeze removes the extra dimension added by DataLoader
-#         except StopIteration:
-#             self.iterator = iter(self.dataloader)
-#             activations = next(self.iterator).squeeze(0)
-#         return activations
+    def get_activations(self):
+        try:
+            activations, gradients = next(self.iterator)
+            # squeeze removes the extra dimension added by DataLoader
+            activations = activations.squeeze(0)
+            gradients = gradients.squeeze(0)
+        except StopIteration:
+            self.iterator = iter(self.dataloader)
+            activations, gradients = next(self.iterator)
+            activations = activations.squeeze(0)
+            gradients = gradients.squeeze(0)
+        return activations, gradients
