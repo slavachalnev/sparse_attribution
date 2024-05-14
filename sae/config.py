@@ -27,6 +27,7 @@ class SAEConfig:
     unexplained_attrib_coeff: float = 0.5
     mse_coefficient: float = 0.5
     unexplained_attrib_method: str = "l2" # "anthropic" or "l2"
+    norm_grad: bool = True
 
     # Training Parameters
     l1_coefficient: float = 1.5e-4
