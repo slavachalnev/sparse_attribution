@@ -4,9 +4,12 @@ import json
 import wandb
 import torch
 import multiprocessing
+from transformer_lens import HookedTransformer
+from datasets import load_dataset
 from config import SAEConfig
 from model import SparseAutoencoder, SAEOutput
 from buffer import ActivationLoader
+from utils import reconstruction_ce
 
 def wandb_logger(queue, config_dict):
     wandb_run = wandb.init(project=config_dict["wandb_project"], name=config_dict["run_name"], config=config_dict)
@@ -17,13 +20,20 @@ def wandb_logger(queue, config_dict):
         wandb_run.log(log_data)
     wandb_run.finish()
 
-def train_multiple_saes(configs):
+def train_multiple_saes(configs: list[SAEConfig]):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     saes = []
     optimizers = []
     lr_schedulers = []
     wandb_queues = []
     wandb_processes = []
+
+    # for cross-entropy calculation
+    model = HookedTransformer.from_pretrained(configs[0].model_name)
+    # test_dataset = load_dataset(f"{configs[0].dataset_path}[:1%]")
+    # test_dataset = load_dataset(configs[0].dataset_path)
+    dataset = load_dataset(configs[0].dataset_path, split="train", streaming=True)
+    dataset = dataset.with_format("torch")
 
     for cfg in configs:
         cfg.device = device
@@ -118,6 +128,14 @@ def train_multiple_saes(configs):
                 checkpoint_path = os.path.join(cfg.checkpoint_dir, f"checkpoint_step_{step}.pt")
                 torch.save(sae.state_dict(), checkpoint_path)
                 print(f"Checkpoint saved for model {i} at step {step}")
+        
+        if step % (cfg.wandb_log_frequency * 100) == 0:
+            print('computing ce')
+            losses = reconstruction_ce(saes, model, dataset)
+            for i, loss in enumerate(losses):
+                print(f"Model {i} CE Loss: {loss}")
+                wandb_queues[i].put({"ce_loss": loss})
+
 
     # Save final models
     for i, sae in enumerate(saes):
@@ -136,73 +154,46 @@ def main():
     log = True
     configs = []
     configs.append(SAEConfig(
-        unexplained_attrib_coeff=5.0,
-        mse_coefficient=0.5,
-        l1_coefficient=1.5e-4,
-        attrib_sparsity_coeff=1.5e-3,
-        lr=3e-4,
+        unexplained_attrib_coeff=0.05,
+        l1_coefficient=8e-4,
+        attrib_sparsity_coeff=8e-4,
+        unexplained_attrib_method="l2",
         log_to_wandb=log,
     ))
     configs.append(SAEConfig(
-        unexplained_attrib_coeff=5.0,
-        mse_coefficient=0.5,
-        l1_coefficient=1e-4,
-        attrib_sparsity_coeff=1e-3,
-        lr=3e-4,
+        unexplained_attrib_coeff=0.05,
+        l1_coefficient=5e-4,
+        attrib_sparsity_coeff=5e-4,
+        unexplained_attrib_method="l2",
         log_to_wandb=log,
     ))
+    configs.append(SAEConfig(
+        unexplained_attrib_coeff=0.05,
+        l1_coefficient=3e-4,
+        attrib_sparsity_coeff=3e-4,
+        unexplained_attrib_method="l2",
+        log_to_wandb=log,
+    ))
+    # no attrib
     configs.append(SAEConfig(
         unexplained_attrib_coeff=0.0,
-        mse_coefficient=1.0,
-        l1_coefficient=1e-4,
+        l1_coefficient=5e-4,
         attrib_sparsity_coeff=0.0,
-        lr=3e-4,
         log_to_wandb=log,
     ))
     configs.append(SAEConfig(
         unexplained_attrib_coeff=0.0,
-        mse_coefficient=1.0,
         l1_coefficient=2e-4,
         attrib_sparsity_coeff=0.0,
-        lr=3e-4,
-        log_to_wandb=log,
-    ))
-
-    # same but with lower learning rate
-    configs.append(SAEConfig(
-        unexplained_attrib_coeff=5.0,
-        mse_coefficient=0.5,
-        l1_coefficient=1.5e-4,
-        attrib_sparsity_coeff=1.5e-3,
-        lr=1e-4,
-        log_to_wandb=log,
-    ))
-    configs.append(SAEConfig(
-        unexplained_attrib_coeff=5.0,
-        mse_coefficient=0.5,
-        l1_coefficient=1e-4,
-        attrib_sparsity_coeff=1e-3,
-        lr=1e-4,
         log_to_wandb=log,
     ))
     configs.append(SAEConfig(
         unexplained_attrib_coeff=0.0,
-        mse_coefficient=1.0,
         l1_coefficient=1e-4,
         attrib_sparsity_coeff=0.0,
-        lr=1e-4,
         log_to_wandb=log,
     ))
-    configs.append(SAEConfig(
-        unexplained_attrib_coeff=0.0,
-        mse_coefficient=1.0,
-        l1_coefficient=2e-4,
-        attrib_sparsity_coeff=0.0,
-        lr=1e-4,
-        log_to_wandb=log,
-    ))
-    for i, config in enumerate(configs):
-        config.run_name = f"batch_run_{i}"
+    
 
     train_multiple_saes(configs)
 

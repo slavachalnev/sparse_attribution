@@ -121,7 +121,7 @@ class SparseAutoencoder(HookedRootModule):
         l1_loss = self.l1_coefficient * l1_factor * sparsity
 
         if self.cfg.norm_grad:
-            grad_wrt_x = grad_wrt_x / grad_wrt_x.norm(p=2, dim=-1, keepdim=True)
+            grad_wrt_x = grad_wrt_x / (grad_wrt_x.norm(p=2, dim=-1, keepdim=True)+ 1e-6)
 
         grad_y = grad_wrt_x @ self.W_dec.T
         l1_attr = (grad_y * feature_acts).abs().sum(dim=-1).mean()

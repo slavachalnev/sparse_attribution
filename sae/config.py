@@ -23,14 +23,14 @@ class SAEConfig:
     store_batch_size: int = 8
 
     # Sparse Attribution Parameters
-    attrib_sparsity_coeff: float = 1.5e-4
-    unexplained_attrib_coeff: float = 0.5
-    mse_coefficient: float = 0.5
+    attrib_sparsity_coeff: float = 5e-4
+    unexplained_attrib_coeff: float = 1.0
+    mse_coefficient: float = 1.0
     unexplained_attrib_method: str = "l2" # "anthropic" or "l2"
-    norm_grad: bool = False
+    norm_grad: bool = True
 
     # Training Parameters
-    l1_coefficient: float = 1.5e-4
+    l1_coefficient: float = 5e-4
     lp_norm: float = 1
     lr: float = 3e-4
     lr_scheduler_name: str = (
@@ -39,13 +39,13 @@ class SAEConfig:
     l1_warm_up_steps: Optional[int] = None
     lr_warm_up_steps: int = 500
     train_batch_size: int = 4096
-    n_training_tokens: int = int(3e8) #int(1e9)
+    n_training_tokens: int = int(5e8) #int(1e9)
 
     dead_feature_threshold: float = 2e7
     steps_between_resample: int = 25000 # Anthropic does every 25000
     tune_resample: bool = False
 
-    checkpoint_frequency: Optional[int] = 10000
+    checkpoint_frequency: Optional[int] = 100000
 
     chunk_size: int = int(1e6)
 
@@ -67,7 +67,7 @@ class SAEConfig:
             self.d_sae = self.d_in * self.expansion_factor
 
         if self.run_name is None:
-            self.run_name = f"{self.d_sae}-L1-{self.l1_coefficient}-LR-{self.lr}-AL1-{self.attrib_sparsity_coeff}-AL2-{self.unexplained_attrib_coeff}"
+            self.run_name = f"{self.d_sae}-L1-{self.l1_coefficient}-LR-{self.lr}-AL1-{self.attrib_sparsity_coeff}-AL2-{self.unexplained_attrib_coeff}-MSE-{self.mse_coefficient}-{self.unexplained_attrib_method[:2]}"
 
         print(f"Run name: {self.run_name}")
 
